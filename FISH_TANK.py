@@ -456,3 +456,242 @@ def setupCamera():
         gluLookAt(*eye, *at, 0, 0, 1)
     else:
         gluLookAt(camera_pos[0], camera_pos[1], camera_pos[2], 0, 0, 0, 0, 0, 1)
+
+#Jerin 
+def update(dt):
+    global last_spawn_food, bubbles
+    dx = dy = dz = 0.0
+    if "w" in keys_down: dy += 1.0
+    if "s" in keys_down: dy -= 1.0
+    if "a" in keys_down: dx -= 1.0
+    if "d" in keys_down: dx += 1.0
+    if "q" in keys_down: dz += 1.0
+    if "e" in keys_down: dz -= 1.0
+
+    if abs(dx) + abs(dy) > 0:
+        hero.yaw = math.degrees(math.atan2(dx, dy))
+
+    hero.move_dir(dx, dy, dt)
+    hero.move_vert(dz, dt)
+
+    diff_scale = DIFF_SPEED_SCALE[diff_idx]
+    aggro_r = DIFF_AGGRO_RANGE[diff_idx]
+    for e in enemies:
+        d2 = dist2(e.x, e.y, hero.x, hero.y)
+        if d2 <= aggro_r*aggro_r:
+            e.chase(hero, dt, diff_scale)
+        else:
+            e.wander(dt)
+
+    min_sep = 35.0
+    for i in range(len(enemies)):
+        for j in range(i+1, len(enemies)):
+            ei, ej = enemies[i], enemies[j]
+            dx = ej.x - ei.x; dy = ej.y - ei.y
+            d2 = dx*dx + dy*dy
+            if d2 < (min_sep*min_sep) and d2 > 1e-4:
+                d = math.sqrt(d2)
+                push = (min_sep - d) * 0.5
+                nx, ny = dx/d, dy/d
+                ei.x -= nx*push; ei.y -= ny*push
+                ej.x += nx*push; ej.y += ny*push
+                clamp_to_aquarium(ei); clamp_to_aquarium(ej)
+
+    if len(foods) < TARGET_FOODS and (time.time() - last_spawn_food) > 0.25:
+        foods.append(Food()); last_spawn_food = time.time()
+
+    now = time.time()
+    i = 0
+    while i < len(foods):
+        fx, fy, fz = foods[i].pos(now)
+        if dist3(hero.x, hero.y, hero.z, fx, fy, fz) < (hero.size*0.5 + foods[i].size):
+            hero.health = min(hero.max_health, hero.health + 8)
+            foods.pop(i)
+        else:
+            i += 1
+
+    # Damage from enemies (unless shield/bunker)
+    safe = hero.cheat or hero_in_bunker(hero)
+    if not safe and (now - hero.last_dmg_time) > 0.35:
+        for e in enemies:
+            if dist3(hero.x, hero.y, hero.z, e.x, e.y, e.z) < (hero.size*0.5 + e.size*0.7):
+                hero.health -= 5
+                hero.last_dmg_time = now
+                break
+    if hero.health <= 0:
+        hero.is_dead = True
+        hero.health = 0
+
+    for b in bubbles:
+        b.update(dt)
+
+    if random.random() < 0.06 and len(bubbles) < 260:
+        bubbles.append(Bubble(random.uniform(-HALF*0.9, HALF*0.9),
+                              random.uniform(-HALF*0.9, HALF*0.9),
+                              4.0 + random.random()*20.0,
+                              source='random'))
+    if random.random() < 0.20 and len(bubbles) < 260:
+        bubbles.append(Bubble(BUB_POS[0], BUB_POS[1], 6.0, source='bubbler', ox=BUB_POS[0], oy=BUB_POS[1]))
+
+def drawHUD():
+    glDisable(GL_LIGHTING)
+
+    y1 = WIN_H - 26
+    y2 = y1 - 20
+    y3 = y2 - 20
+
+    glColor3f(1,1,1)
+    draw_text(WIN_W//2 - 160, y1, "[1] Easy   [2] Medium   [3] Hard")
+    draw_text(WIN_W//2 - 40,  y2, f"Mode: {DIFFS[diff_idx]}")
+
+    # Top-right: health
+    glColor3f(0.95,0.25,0.25)
+    draw_text(WIN_W - 180, y1, f"HEALTH: {hero.health:03d}")
+
+    # Top-left: controls on two lines
+    glColor3f(1,1,1)
+    draw_text(12, y1, "Move: WASD + Q/E   Cam: Arrows")
+    draw_text(12, y2, "FPV: F   Shield: C   Reset: R")
+
+    if hero_in_bunker(hero):
+        glColor3f(0.5,1.0,0.6)
+        draw_text(WIN_W//2 - 70, y3, "IN BUNKER (SAFE)")
+    if hero.is_dead:
+        glColor3f(1,0.2,0.2)
+        draw_text(WIN_W//2 - 120, WIN_H//2, "YOU DIED - Press R")
+
+def draw_walls_transparent():
+    #lass walls after everything else so contents are visible from outside.
+    s = HALF
+    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glDisable(GL_CULL_FACE)     #both sides
+    glDepthMask(GL_FALSE)       
+    glColor4f(0.5, 0.8, 1.0, 0.12)
+
+    glBegin(GL_QUADS)
+
+    glVertex3f(-s, s, 0); glVertex3f(s, s, 0); glVertex3f(s, s, TOP_Z); glVertex3f(-s, s, TOP_Z)
+
+    glVertex3f(-s, -s, 0); glVertex3f(-s, -s, TOP_Z); glVertex3f(s, -s, TOP_Z); glVertex3f(s, -s, 0)
+
+    glVertex3f(s, -s, 0); glVertex3f(s, -s, TOP_Z); glVertex3f(s, s, TOP_Z); glVertex3f(s, s, 0)
+
+    glVertex3f(-s, -s, 0); glVertex3f(-s, s, 0); glVertex3f(-s, s, TOP_Z); glVertex3f(-s, -s, TOP_Z)
+    glEnd()
+
+    glDepthMask(GL_TRUE)
+    glEnable(GL_CULL_FACE)
+    glDisable(GL_BLEND)
+
+def draw_scene():
+
+    glCallList(sand_list)
+
+   
+    draw_bunker()
+
+
+    draw_bubbler()
+
+   
+    t = time.time()
+    for p in plants:
+        p.draw(t)
+
+  
+    for f in foods:
+        x,y,z = f.pos(t)
+        glPushMatrix()
+        glTranslatef(x,y,z)
+        draw_food_pellet()
+        glPopMatrix()
+
+   
+    for e in enemies:
+        glPushMatrix()
+        glTranslatef(e.x, e.y, e.z)
+        yaw = math.degrees(math.atan2(hero.x-e.x, hero.y-e.y))
+        glRotatef(yaw, 0,0,1)
+        draw_realistic_fish(e.size, e.col, t, enemy=True)
+        glPopMatrix()
+
+
+    if not first_person:
+        glPushMatrix()
+        glTranslatef(hero.x, hero.y, hero.z)
+        glRotatef(hero.yaw, 0,0,1)
+        draw_realistic_fish(hero.size, (0.95,0.55,0.25), t)
+        if hero.cheat:
+            draw_shield(hero.size*0.85)
+        glPopMatrix()
+    else:
+        if hero.cheat:
+            # shield at hero in FPV so it's visible around camera
+            glPushMatrix()
+            glTranslatef(hero.x, hero.y, hero.z + 14.0)
+            draw_shield(hero.size*0.9)
+            glPopMatrix()
+
+    # Bubbles (semi-transparent)
+    for b in bubbles[-220:]:  # cap drawing count
+        glPushMatrix()
+        glTranslatef(b.x, b.y, b.z)
+        draw_bubble(b.r)
+        glPopMatrix()
+
+def idle():
+    global last_time
+    now = time.time()
+    dt = 0.016 if last_time is None else clamp(now - last_time, 0.0, 0.05)
+    last_time = now
+    if not hero.is_dead:
+        update(dt)
+    glutPostRedisplay()
+
+def showScreen():
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    glViewport(0, 0, WIN_W, WIN_H)
+    setupCamera()
+
+    glEnable(GL_DEPTH_TEST)
+    glEnable(GL_CULL_FACE)
+    setup_lighting()
+
+    #opaque-ish scene
+    draw_scene()
+
+    #transparent glass walls
+    draw_walls_transparent()
+
+    # HUD
+    glDisable(GL_LIGHTING)
+    drawHUD()
+
+    glutSwapBuffers()
+
+def initGL():
+    glClearColor(0.05, 0.15, 0.25, 1.0)  
+    glEnable(GL_DEPTH_TEST)
+
+def main():
+    glutInit()
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
+    glutInitWindowSize(WIN_W, WIN_H)
+    glutCreateWindow(b"Aquarium Hero Fish (v3)")
+
+    initGL()
+    build_sand()
+    reset_game()
+
+    glutDisplayFunc(showScreen)
+    glutIdleFunc(idle)
+    glutKeyboardFunc(keyboardListener)
+    glutKeyboardUpFunc(keyboardUp)
+    glutSpecialFunc(specialKeyListener)
+    glutSpecialUpFunc(specialKeyUp)
+
+    glutMainLoop()
+
+if __name__ == "__main__":
+    main()
+
