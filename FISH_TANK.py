@@ -223,3 +223,236 @@ def draw_text(x, y, text, font=GLUT_BITMAP_HELVETICA_18):
     glPopMatrix()
     glMatrixMode(GL_PROJECTION); glPopMatrix()
     glMatrixMode(GL_MODELVIEW)
+
+#MAHIM
+def draw_realistic_fish(size, base_col, t, enemy=False):
+    """More 'real' fish: ellipsoid body, animated tail, side fins, eyes"""
+    quad = gluNewQuadric()
+    glPushMatrix()
+    glScalef(1.6, 2.2, 1.0)  
+    glColor3f(*base_col)     
+    glutSolidSphere(size*0.25, 24, 18)
+    glPopMatrix()
+
+
+    wag = math.sin(t*7.0 + (0.0 if enemy else 1.2)) * 15.0
+    glPushMatrix()
+    glTranslatef(0, -size*0.75, 0)
+    glRotatef(90, 1, 0, 0)
+    glRotatef(wag, 0, 1, 0)
+    glColor3f(base_col[0]*0.9, base_col[1]*0.9, base_col[2]*0.9)
+    gluCylinder(quad, size*0.16, 0.0, size*0.8, 18, 1)
+    glPopMatrix()
+
+    glPushMatrix()
+    glTranslatef(0, 0, size*0.35)
+    glRotatef(-90, 1, 0, 0)
+    glColor3f(base_col[0]*1.1, base_col[1]*1.1, base_col[2]*1.1)
+    gluCylinder(quad, size*0.08, 0.0, size*0.30, 14, 1)
+    glPopMatrix()
+
+    for sgn in (-1, 1):
+        glPushMatrix()
+        glTranslatef(size*0.35*sgn, size*0.1, 0)
+        flap = math.sin(t*5.0 + sgn)*18.0
+        glRotatef(90, 0,1,0)
+        glRotatef(flap, 0,0,1)
+        glColor3f(base_col[0]*1.05, base_col[1]*1.05, base_col[2]*1.05)
+        gluCylinder(quad, size*0.04, 0.0, size*0.30, 10, 1)
+        glPopMatrix()
+
+    
+    for sgn in (-1, 1):
+        glPushMatrix()
+        glTranslatef(size*0.28*sgn, size*0.25, size*0.10)
+        glColor3f(0.95, 0.95, 0.95)
+        glutSolidSphere(size*0.06, 10, 10)
+        glTranslatef(0, size*0.02, size*0.03)
+        glColor3f(0.05, 0.05, 0.05)
+        glutSolidSphere(size*0.03, 8, 8)
+        glPopMatrix()
+
+def draw_bunker():
+    glPushMatrix()
+    glTranslatef(BUNKER_CENTER[0], BUNKER_CENTER[1], 0.0)
+    glRotatef(-90, 1, 0, 0)
+    glColor3f(0.36, 0.30, 0.26)
+    quad = gluNewQuadric()
+    gluCylinder(quad, BUNKER_RADIUS, BUNKER_RADIUS*0.92, BUNKER_HEIGHT, 28, 1)
+    glColor3f(0.46, 0.38, 0.30)
+    gluDisk(quad, BUNKER_RADIUS*0.92, BUNKER_RADIUS, 28, 1)
+    glPopMatrix()
+
+sand_list = None
+def build_sand():
+    global sand_list
+    random.seed(3)
+    sand_list = glGenLists(1)
+    glNewList(sand_list, GL_COMPILE)
+    glBegin(GL_TRIANGLES)
+    s = HALF
+    steps = 64
+    for i in range(steps):
+        for j in range(steps):
+            x0 = -s + (i/steps)*GRID_LENGTH
+            y0 = -s + (j/steps)*GRID_LENGTH
+            x1 = -s + ((i+1)/steps)*GRID_LENGTH
+            y1 = -s + ((j+1)/steps)*GRID_LENGTH
+            def h(x,y):
+
+                return 2.0*math.sin(x*0.01) + 1.5*math.cos(y*0.012) + 1.0*math.sin((x+y)*0.007)
+            z00 = h(x0,y0); z10=h(x1,y0); z01=h(x0,y1); z11=h(x1,y1)
+
+            glColor3f(0.86,0.82,0.67)
+            glVertex3f(x0,y0,z00); glVertex3f(x1,y0,z10); glVertex3f(x1,y1,z11)
+
+            glColor3f(0.84,0.80,0.65)
+            glVertex3f(x0,y0,z00); glVertex3f(x1,y1,z11); glVertex3f(x0,y1,z01)
+    glEnd()
+    glEndList()
+
+def draw_food_pellet():
+    glColor3f(0.9, 0.22, 0.22)
+    glutSolidSphere(6.0, 12, 12)
+
+def draw_shield(radius):
+    glColor4f(0.3, 0.8, 1.0, 0.22)
+    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glDisable(GL_CULL_FACE)  
+    glutSolidSphere(radius, 18, 16)
+    glEnable(GL_CULL_FACE)
+    glDisable(GL_BLEND)
+
+def draw_bubble(r):
+    glColor4f(0.85, 0.93, 1.0, 0.35)
+    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glDisable(GL_CULL_FACE)  
+    glutSolidSphere(r, 12, 10)
+    glEnable(GL_CULL_FACE)
+    glDisable(GL_BLEND)
+
+# ---------------- Input ----------------
+keys_down = set()
+def keyboardListener(key, x, y):
+    global first_person, diff_idx, hero
+    k = key.decode("utf-8").lower() if isinstance(key, bytes) else key.lower()
+    if k in ("w","a","s","d","q","e"):
+        keys_down.add(k)
+    elif k == "f":
+        first_person = not first_person
+    elif k == "c":
+        hero.cheat = not hero.cheat
+    elif k == "1":
+        diff_idx = 0
+    elif k == "2":
+        diff_idx = 1
+    elif k == "3":
+        diff_idx = 2
+    elif k == "r":
+        reset_game()
+
+def keyboardUp(key, x, y):
+    k = key.decode("utf-8").lower() if isinstance(key, bytes) else key.lower()
+    if k in keys_down:
+        keys_down.discard(k)
+
+def specialKeyListener(key, x, y):
+    global camera_pos, camera_pitch, hero
+    if first_person:
+
+        if key == GLUT_KEY_LEFT:
+            hero.yaw -= 5.0
+        elif key == GLUT_KEY_RIGHT:
+            hero.yaw += 5.0
+        elif key == GLUT_KEY_UP:
+            camera_pitch = clamp(camera_pitch + 3.0, -60.0, 60.0)
+        elif key == GLUT_KEY_DOWN:
+            camera_pitch = clamp(camera_pitch - 3.0, -60.0, 60.0)
+    else:
+
+        if key == GLUT_KEY_UP:
+            camera_pos[1] -= 30
+        elif key == GLUT_KEY_DOWN:
+            camera_pos[1] += 30
+        elif key == GLUT_KEY_LEFT:
+            camera_pos[0] -= 30
+        elif key == GLUT_KEY_RIGHT:
+            camera_pos[0] += 30
+
+def specialKeyUp(key, x, y):
+    pass
+
+# ---------------- Game Loop ----------------
+hero = None
+enemies = []
+foods = []
+plants = []
+bubbles = []
+last_spawn_food = 0.0
+TARGET_FOODS = 30
+last_time = None
+
+def reset_game():
+    global hero, enemies, foods, plants, bubbles, last_time, last_spawn_food, diff_idx, first_person, camera_pitch
+    hero = Hero()
+    enemies = [Enemy() for _ in range(14)]
+    foods = [Food() for _ in range(TARGET_FOODS)]
+
+    plants = []
+    for _ in range(25):
+        while True:
+            x = random.uniform(-GRID_LENGTH*0.45, GRID_LENGTH*0.45)
+            y = random.uniform(-GRID_LENGTH*0.45, GRID_LENGTH*0.45)
+            if (x-BUNKER_CENTER[0])**2 + (y-BUNKER_CENTER[1])**2 > (BUNKER_RADIUS+40)**2:
+                plants.append(Plant(x,y)); break
+
+    bubbles = []
+    for _ in range(60):  
+        bubbles.append(Bubble(random.uniform(-HALF*0.9, HALF*0.9),
+                              random.uniform(-HALF*0.9, HALF*0.9),
+                              random.uniform(4.0, 60.0),
+                              source='random'))
+    for p in plants:    
+        for _ in range(2):
+            bubbles.append(Bubble(p.x + random.uniform(-6,6),
+                                  p.y + random.uniform(-6,6),
+                                  random.uniform(4.0, 16.0),
+                                  source='plant', ox=p.x, oy=p.y))
+    
+    for _ in range(40):
+        bubbles.append(Bubble(BUB_POS[0], BUB_POS[1],
+                              random.uniform(4.0, 12.0),
+                              source='bubbler', ox=BUB_POS[0], oy=BUB_POS[1]))
+    last_time = None
+    last_spawn_food = 0.0
+    first_person = False
+    camera_pitch = 0.0
+    diff_idx = 1 
+
+def setup_lighting():
+    glEnable(GL_LIGHTING)
+    glEnable(GL_LIGHT0)
+    glEnable(GL_COLOR_MATERIAL)
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
+    light_pos = (0.0, 0.0, 650.0, 1.0)
+    glLightfv(GL_LIGHT0, GL_POSITION, light_pos)
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, (0.9, 0.9, 0.95, 1.0))
+    glLightfv(GL_LIGHT0, GL_AMBIENT, (0.25, 0.28, 0.32, 1.0))
+
+def setupCamera():
+    glMatrixMode(GL_PROJECTION); glLoadIdentity()
+    gluPerspective(fovY, ASPECT, 0.1, 6000.0)
+    glMatrixMode(GL_MODELVIEW); glLoadIdentity()
+
+    if first_person:
+       
+        yaw = math.radians(hero.yaw)
+        pitch = math.radians(camera_pitch)
+        dirx = math.cos(pitch) * math.sin(yaw)
+        diry = math.cos(pitch) * math.cos(yaw)
+        dirz = math.sin(pitch)
+        eye = (hero.x, hero.y, hero.z + 14.0)
+        at  = (hero.x + dirx*80.0, hero.y + diry*80.0, hero.z + 14.0 + dirz*80.0)
+        gluLookAt(*eye, *at, 0, 0, 1)
+    else:
+        gluLookAt(camera_pos[0], camera_pos[1], camera_pos[2], 0, 0, 0, 0, 0, 1)
